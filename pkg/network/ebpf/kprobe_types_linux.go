@@ -29,6 +29,7 @@ type ConnStats struct {
 	Direction    uint8
 	Sent_packets uint64
 	Recv_packets uint64
+	Tags         uint64
 }
 type Conn struct {
 	Tup        ConnTuple
@@ -94,3 +95,11 @@ const (
 )
 
 const BatchSize = 0x4
+
+var (
+	StaticTags = map[uint64]string{
+		0x1: "HTTP",
+		0x2: "LIBGNUTLS",
+		0x4: "LIBSSL",
+	}
+)

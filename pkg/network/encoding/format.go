@@ -44,6 +44,7 @@ func FormatConnection(
 	httpStats *model.HTTPAggregations,
 	dnsFormatter *dnsFormatter,
 	ipc ipCache,
+	tagsSet *network.TagsSet,
 ) *model.Connection {
 	c := connPool.Get().(*model.Connection)
 	c.Pid = int32(conn.Pid)
@@ -70,6 +71,7 @@ func FormatConnection(
 
 	c.RouteIdx = formatRouteIdx(conn.Via, routes)
 	dnsFormatter.FormatConnectionDNS(conn, c)
+	c.Tags = formatTags(tagsSet, conn)
 
 	if httpStats != nil {
 		c.HttpAggregations, _ = proto.Marshal(httpStats)
@@ -118,9 +120,10 @@ func FormatCompilationTelemetry(telByAsset map[string]network.RuntimeCompilation
 }
 
 // FormatHTTPStats converts the HTTP map into a suitable format for serialization
-func FormatHTTPStats(httpData map[http.Key]http.RequestStats) map[http.Key]*model.HTTPAggregations {
+func FormatHTTPStats(httpData map[http.Key]http.RequestStats) (map[http.Key]*model.HTTPAggregations, map[http.Key]uint64) {
 	var (
 		aggregationsByKey = make(map[http.Key]*model.HTTPAggregations, len(httpData))
+		tagsByKey         = make(map[http.Key]uint64, len(httpData))
 
 		// Pre-allocate some of the objects
 		dataPool = make([]model.HTTPStats_Data, len(httpData)*http.NumStatusClasses)
@@ -149,6 +152,7 @@ func FormatHTTPStats(httpData map[http.Key]http.RequestStats) map[http.Key]*mode
 			StatsByResponseStatus: ptrPool[poolIdx : poolIdx+http.NumStatusClasses],
 		}
 
+		var tags uint64
 		for i := 0; i < len(stats); i++ {
 			data := &dataPool[poolIdx+i]
 			ms.StatsByResponseStatus[i] = data
@@ -160,13 +164,15 @@ func FormatHTTPStats(httpData map[http.Key]http.RequestStats) map[http.Key]*mode
 			} else {
 				data.FirstLatencySample = stats[i].FirstLatencySample
 			}
+			tags |= stats[i].Tags
 		}
+		tagsByKey[key] |= tags
 
 		poolIdx += http.NumStatusClasses
 		httpAggregations.EndpointAggregations = append(httpAggregations.EndpointAggregations, ms)
 	}
 
-	return aggregationsByKey
+	return aggregationsByKey, tagsByKey
 }
 
 // Build the key for the http map based on whether the local or remote side is http.
@@ -296,4 +302,11 @@ func formatRouteIdx(v *network.Via, routes map[string]RouteIdx) int32 {
 
 func routeKey(v *network.Via) string {
 	return v.Subnet.Alias
+}
+
+func formatTags(tagsSet *network.TagsSet, c network.ConnectionStats) (tagsIdx []uint32) {
+	for _, tag := range network.GetStaticTags(c.Tags) {
+		tagsIdx = append(tagsIdx, tagsSet.Add(tag))
+	}
+	return tagsIdx
 }
