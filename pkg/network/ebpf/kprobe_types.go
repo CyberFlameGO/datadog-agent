@@ -54,5 +54,6 @@ var (
 		C.HTTP:      "HTTP",
 		C.LIBGNUTLS: "LIBGNUTLS",
 		C.LIBSSL:    "LIBSSL",
+		C.TLS:       "TLS",
 	}
 )

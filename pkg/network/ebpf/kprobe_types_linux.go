@@ -101,5 +101,6 @@ var (
 		0x1: "HTTP",
 		0x2: "LIBGNUTLS",
 		0x4: "LIBSSL",
+		0x8: "TLS",
 	}
 )
