@@ -8,6 +8,7 @@ build_clang*                         @DataDog/agent-network
 tests_*                              @DataDog/multiple
 tests_ebpf                           @DataDog/agent-network
 security_go_generate_check           @DataDog/agent-security
+go_lookup_tables_check               @DataDog/agent-network
 
 # Golang dependency list generation
 golang_deps_generate                 @DataDog/agent-core
