@@ -3,6 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
+//go:build docker
 // +build docker
 
 package docker
@@ -33,7 +34,6 @@ type DockerConfig struct {
 func (c *DockerConfig) Parse(data []byte) error {
 	// default values
 	c.CollectEvent = true
-	c.CollectContainerSizeFreq = 5
 
 	return yaml.Unmarshal(data, c)
 }

@@ -10,51 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-agent/pkg/aggregator/mocksender"
+	taggerUtils "github.com/DataDog/datadog-agent/pkg/tagger/utils"
 	"github.com/DataDog/datadog-agent/pkg/util"
-	"github.com/DataDog/datadog-agent/pkg/util/containers"
 	"github.com/DataDog/datadog-agent/pkg/util/containers/v2/metrics"
 	"github.com/DataDog/datadog-agent/pkg/workloadmeta"
 	"github.com/stretchr/testify/assert"
 )
-
-type mockContainerLister struct {
-	containers []*workloadmeta.Container
-	err        error
-}
-
-func (l *mockContainerLister) List() ([]*workloadmeta.Container, error) {
-	return l.containers, l.err
-}
-
-func createTestProcessor(listerContainers []*workloadmeta.Container, listerError error, metricsContainers map[string]metrics.MockContainerEntry) (*mocksender.MockSender, *Processor) {
-	mockProvider := metrics.NewMockMetricsProvider()
-	mockCollector := metrics.NewMockCollector("testCollector")
-	mockProvider.RegisterConcreteCollector("docker", mockCollector)
-	mockProvider.RegisterConcreteCollector("containerd", mockCollector)
-	for cID, entry := range metricsContainers {
-		mockCollector.SetContainerEntry(cID, entry)
-	}
-
-	mockLister := mockContainerLister{
-		containers: listerContainers,
-		err:        listerError,
-	}
-
-	filter, _ := containers.GetSharedMetricFilter()
-
-	mockedSender := mocksender.NewMockSender("generic-container")
-	mockedSender.SetupAcceptAll()
-
-	p := &Processor{
-		metricsProvider: mockProvider,
-		ctrLister:       &mockLister,
-		metricsAdapter:  GenericMetricsAdapter{},
-		ctrFilter:       filter,
-	}
-
-	return mockedSender, p
-}
 
 func createContainerMeta(runtime, cID string) *workloadmeta.Container {
 	return &workloadmeta.Container{
@@ -143,7 +104,7 @@ func TestProcessorRunFullStatsLinux(t *testing.T) {
 		},
 	}
 
-	mockSender, processor := createTestProcessor(containersMeta, nil, containersStats)
+	mockSender, processor, _ := CreateTestProcessor(containersMeta, nil, containersStats, GenericMetricsAdapter{}, nil)
 	err := processor.Run(mockSender, 0)
 	assert.ErrorIs(t, err, nil)
 
@@ -168,12 +129,12 @@ func TestProcessorRunFullStatsLinux(t *testing.T) {
 	mockSender.AssertMetric(t, "Gauge", "container.memory.swap", 0, "", expectedTags)
 	mockSender.AssertMetric(t, "Gauge", "container.memory.oom_events", 10, "", expectedTags)
 
-	expectedFooTags := extraTags(expectedTags, "device_name:/dev/foo")
+	expectedFooTags := taggerUtils.ConcatenateStringTags(expectedTags, "device:/dev/foo", "device_name:/dev/foo")
 	mockSender.AssertMetric(t, "Rate", "container.io.read", 100, "", expectedFooTags)
 	mockSender.AssertMetric(t, "Rate", "container.io.read.operations", 10, "", expectedFooTags)
 	mockSender.AssertMetric(t, "Rate", "container.io.write", 200, "", expectedFooTags)
 	mockSender.AssertMetric(t, "Rate", "container.io.write.operations", 20, "", expectedFooTags)
-	expectedBarTags := extraTags(expectedTags, "device_name:/dev/bar")
+	expectedBarTags := taggerUtils.ConcatenateStringTags(expectedTags, "device:/dev/bar", "device_name:/dev/bar")
 	mockSender.AssertMetric(t, "Rate", "container.io.read", 100, "", expectedBarTags)
 	mockSender.AssertMetric(t, "Rate", "container.io.read.operations", 10, "", expectedBarTags)
 	mockSender.AssertMetric(t, "Rate", "container.io.write", 200, "", expectedBarTags)
@@ -197,7 +158,7 @@ func TestProcessorRunPartialStats(t *testing.T) {
 		},
 	}
 
-	mockSender, processor := createTestProcessor(containersMeta, nil, containersStats)
+	mockSender, processor, _ := CreateTestProcessor(containersMeta, nil, containersStats, GenericMetricsAdapter{}, nil)
 	err := processor.Run(mockSender, 0)
 	assert.ErrorIs(t, err, nil)
 

@@ -11,6 +11,9 @@ package cgroups
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"io/ioutil"
+	"path/filepath"
+	"strconv"
 	"time"
 )
 
@@ -19,6 +22,17 @@ import (
 const (
 	UserHZToNano uint64 = uint64(time.Second) / 100
 )
+
+// ReadCgroupReferences returns all cgroups paths for pid
+func ReadCgroupReferences(procPath string, pid int) (string, error) {
+	cgPath := filepath.Join(procPath, strconv.Itoa(pid), "cgroup")
+	content, err := ioutil.ReadFile(cgPath)
+	if err != nil {
+		return "", err
+	}
+
+	return string(content), nil
+}
 
 func uint64Ptr(v uint64) *uint64 {
 	return &v

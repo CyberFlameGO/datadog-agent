@@ -13,6 +13,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/security/log"
 	"github.com/DataDog/datadog-agent/pkg/tagger"
 	"github.com/DataDog/datadog-agent/pkg/tagger/collectors"
+	taggerUtils "github.com/DataDog/datadog-agent/pkg/tagger/utils"
 	"github.com/DataDog/datadog-agent/pkg/util"
 	"github.com/DataDog/datadog-agent/pkg/util/containers"
 	"github.com/DataDog/datadog-agent/pkg/util/containers/v2/metrics"
@@ -22,13 +23,13 @@ import (
 // Processor contains the core logic of the generic check, allowing reusability
 type Processor struct {
 	metricsProvider metrics.Provider
-	ctrLister       ContainerLister
+	ctrLister       ContainerAccessor
 	metricsAdapter  MetricsAdapter
-	ctrFilter       *containers.Filter
+	ctrFilter       ContainerFilter
 }
 
 // NewProcessor creates a new processor
-func NewProcessor(provider metrics.Provider, lister ContainerLister, adapter MetricsAdapter, filter *containers.Filter) Processor {
+func NewProcessor(provider metrics.Provider, lister ContainerAccessor, adapter MetricsAdapter, filter ContainerFilter) Processor {
 	return Processor{
 		metricsProvider: provider,
 		ctrLister:       lister,
@@ -63,7 +64,7 @@ func (p *Processor) Run(sender aggregator.Sender, cacheValidity time.Duration) e
 			continue
 		}
 
-		if p.ctrFilter.IsExcluded(container.Name, container.Image.Name, container.Labels["io.kubernetes.pod.namespace"]) {
+		if p.ctrFilter != nil && p.ctrFilter.IsExcluded(container) {
 			log.Tracef("Container excluded due to filter, name: %s - image: %s - namespace: %s", container.Name, container.Image.Name, container.Labels["io.kubernetes.pod.namespace"])
 			continue
 		}
@@ -133,7 +134,7 @@ func (p *Processor) processContainer(sender aggregator.Sender, tags []string, co
 
 	if containerStats.IO != nil {
 		for deviceName, deviceStats := range containerStats.IO.Devices {
-			deviceTags := extraTags(tags, "device_name:"+deviceName)
+			deviceTags := taggerUtils.ConcatenateStringTags(tags, "device:"+deviceName, "device_name:"+deviceName)
 			p.sendMetric(sender.Rate, "container.io.read", deviceStats.ReadBytes, deviceTags)
 			p.sendMetric(sender.Rate, "container.io.read.operations", deviceStats.ReadOperations, deviceTags)
 			p.sendMetric(sender.Rate, "container.io.write", deviceStats.WriteBytes, deviceTags)
@@ -151,6 +152,7 @@ func (p *Processor) processContainer(sender aggregator.Sender, tags []string, co
 	if containerStats.PID != nil {
 		p.sendMetric(sender.Gauge, "container.pid.thread_count", containerStats.PID.ThreadCount, tags)
 		p.sendMetric(sender.Gauge, "container.pid.thread_limit", containerStats.PID.ThreadLimit, tags)
+		p.sendMetric(sender.Gauge, "container.pid.open_files", containerStats.PID.OpenFiles, tags)
 	}
 
 	return nil
@@ -162,12 +164,7 @@ func (p *Processor) sendMetric(senderFunc func(string, float64, string, []string
 	}
 
 	metricName, val := p.metricsAdapter.AdaptMetrics(metricName, *value)
-	senderFunc(metricName, val, "", tags)
-}
-
-func extraTags(tags []string, extraTags ...string) []string {
-	finalTags := make([]string, 0, len(tags)+len(extraTags))
-	finalTags = append(finalTags, tags...)
-	finalTags = append(finalTags, extraTags...)
-	return finalTags
+	if metricName != "" {
+		senderFunc(metricName, val, "", tags)
+	}
 }

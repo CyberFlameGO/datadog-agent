@@ -45,11 +45,12 @@ func DefaultFilter(path, name string) (string, error) {
 	return path, nil
 }
 
-var containerRegexp = regexp.MustCompile("([0-9a-f]{64}|[0-9a-f]{8}(-[0-9a-f]{4}){4})")
+// ContainerRegexp defines the regexp used to match container ids
+var ContainerRegexp = regexp.MustCompile("([0-9a-f]{64}|[0-9a-f]{8}(-[0-9a-f]{4}){4})")
 
 // ContainerFilter returns a filter that will match cgroup folders containing a container id
 func ContainerFilter(path, name string) (string, error) {
-	match := containerRegexp.FindString(name)
+	match := ContainerRegexp.FindString(name)
 
 	// With systemd cgroup driver, there may be a `.mount` cgroup on top of the normal one
 	// While existing, no process is attached to it and thus holds no stats

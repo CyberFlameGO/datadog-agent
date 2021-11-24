@@ -4,7 +4,8 @@
 // Copyright 2016-present Datadog, Inc.
 
 //go:build docker && (linux || windows)
-// +build docker,linux docker,windows
+// +build docker
+// +build linux windows
 
 package docker
 
@@ -143,9 +144,6 @@ func Test_convertNetworkStats(t *testing.T) {
 					TxPackets: 49,
 				},
 			},
-			networks: map[string]string{
-				"eth1": "custom_iface",
-			},
 			expectedOutput: provider.ContainerNetworkStats{
 				BytesSent:   util.Float64Ptr(92),
 				BytesRcvd:   util.Float64Ptr(88),
@@ -171,7 +169,7 @@ func Test_convertNetworkStats(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			assert.Equal(t, &test.expectedOutput, convertNetworkStats(test.input, test.networks))
+			assert.Equal(t, &test.expectedOutput, convertNetworkStats(test.input))
 		})
 	}
 }

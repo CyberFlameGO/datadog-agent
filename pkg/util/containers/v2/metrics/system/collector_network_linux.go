@@ -108,7 +108,7 @@ func collectNetworkStats(procPath string, pid int, networks map[string]string) (
 	return nil, nil
 }
 
-// DetectNetworkDestinations lists all the networks available
+// detectNetworkDestinations lists all the networks available
 // to a given PID and parses them in NetworkInterface objects
 func detectNetworkDestinations(procPath string, pid int) ([]containers.NetworkDestination, error) {
 	procNetFile := filepath.Join(procPath, strconv.Itoa(pid), "net", "route")
@@ -152,7 +152,7 @@ func detectNetworkDestinations(procPath string, pid int) ([]containers.NetworkDe
 	return destinations, nil
 }
 
-// DefaultGateway returns the default Docker gateway.
+// defaultGateway returns the default Docker gateway.
 func defaultGateway(procPath string) (net.IP, error) {
 	fields, err := defaultGatewayFields(procPath)
 	if err != nil || len(fields) < 3 {
@@ -168,7 +168,7 @@ func defaultGateway(procPath string) (net.IP, error) {
 	return ip, nil
 }
 
-// DefaultHostIPs returns the IP addresses bound to the default network interface.
+// defaultHostIPs returns the IP addresses bound to the default network interface.
 // The default network interface is the one connected to the network gateway, and it is determined
 // by parsing the routing table file in the proc file system.
 func defaultHostIPs(procPath string) ([]string, error) {
@@ -206,7 +206,6 @@ func defaultHostIPs(procPath string) ([]string, error) {
 // enp0s3  0002000A     00000000  0001   0       0    0       00FFFFFF  0    0       0
 //
 // The returned value would be ["enp0s3","00000000","0202000A","0003","0","0","0","00000000","0","0","0"]
-//
 func defaultGatewayFields(procPath string) ([]string, error) {
 	netRouteFile := filepath.Join(procPath, "net", "route")
 	f, err := os.Open(netRouteFile)

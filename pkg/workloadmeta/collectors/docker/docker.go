@@ -62,9 +62,12 @@ func (c *collector) Start(ctx context.Context, store workloadmeta.Store) error {
 		return err
 	}
 
-	filter, err := containers.GetPauseContainerFilter()
-	if err != nil {
-		log.Warnf("Can't get pause container filter, no filtering will be applied: %w", err)
+	var filter *containers.Filter
+	if config.Datadog.GetBool("exclude_pause_container") {
+		filter, err = containers.GetPauseContainerFilter()
+		if err != nil {
+			log.Warnf("Can't get pause container filter, no filtering will be applied: %w", err)
+		}
 	}
 
 	c.eventCh, c.errCh, err = c.dockerUtil.SubscribeToContainerEvents(componentName, filter)

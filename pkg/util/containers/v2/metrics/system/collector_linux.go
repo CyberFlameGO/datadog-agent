@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/util/cgroups"
 	"github.com/DataDog/datadog-agent/pkg/util/containers/v2/metrics/provider"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
+	"github.com/DataDog/datadog-agent/pkg/util/system"
 	utilsystem "github.com/DataDog/datadog-agent/pkg/util/system"
 )
 
@@ -91,7 +92,7 @@ func (c *cgroupCollector) GetContainerStats(containerID string, cacheValidity ti
 	return c.buildContainerMetrics(stats), nil
 }
 
-func (c *cgroupCollector) GetContainerNetworkStats(containerID string, cacheValidity time.Duration, networks map[string]string) (*provider.ContainerNetworkStats, error) {
+func (c *cgroupCollector) GetContainerNetworkStats(containerID string, cacheValidity time.Duration) (*provider.ContainerNetworkStats, error) {
 	cg, err := c.getCgroup(containerID, cacheValidity)
 	if err != nil {
 		return nil, err
@@ -103,7 +104,19 @@ func (c *cgroupCollector) GetContainerNetworkStats(containerID string, cacheVali
 		return nil, err
 	}
 
-	return buildNetworkStats(c.procPath, networks, pidStats)
+	return buildNetworkStats(c.procPath, nil, pidStats)
+}
+
+func (c *cgroupCollector) GetContainerIDForPID(pid int, cacheValidity time.Duration) (string, error) {
+	// Currently it does not consider cacheVadlity as no cache is used.
+	refs, err := cgroups.ReadCgroupReferences(c.procPath, pid)
+	if err != nil {
+		return "", err
+	}
+
+	// Returns first match in the file. We do expect all container IDs to be the same.
+	cID := cgroups.ContainerRegexp.FindString(string(refs))
+	return cID, nil
 }
 
 func (c *cgroupCollector) getCgroup(containerID string, cacheValidity time.Duration) (cgroups.Cgroup, error) {
@@ -129,7 +142,7 @@ func (c *cgroupCollector) buildContainerMetrics(cgs cgroups.Stats) *provider.Con
 		Memory:    buildMemoryStats(cgs.Memory),
 		CPU:       buildCPUStats(cgs.CPU),
 		IO:        buildIOStats(c.procPath, cgs.IO),
-		PID:       buildPIDStats(cgs.PID),
+		PID:       buildPIDStats(c.procPath, cgs.PID),
 	}
 
 	return cs
@@ -194,7 +207,7 @@ func computeCPULimitPct(cgs *cgroups.CPUStats) *float64 {
 	return &limitPct
 }
 
-func buildPIDStats(cgs *cgroups.PIDStats) *provider.ContainerPIDStats {
+func buildPIDStats(procPath string, cgs *cgroups.PIDStats) *provider.ContainerPIDStats {
 	if cgs == nil {
 		return nil
 	}
@@ -203,6 +216,12 @@ func buildPIDStats(cgs *cgroups.PIDStats) *provider.ContainerPIDStats {
 	cs.PIDs = cgs.PIDs
 	convertField(cgs.HierarchicalThreadCount, &cs.ThreadCount)
 	convertField(cgs.HierarchicalThreadLimit, &cs.ThreadLimit)
+
+	// Get OpenFDs
+	count, allFailed := system.CountOpenFileDescriptors(procPath, cgs.PIDs)
+	if !allFailed {
+		convertField(&count, &cs.OpenFiles)
+	}
 
 	return cs
 }

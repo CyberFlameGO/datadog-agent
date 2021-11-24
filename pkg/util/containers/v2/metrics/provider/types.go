@@ -62,7 +62,6 @@ type ContainerIOStats struct {
 	WriteBytes      *float64
 	ReadOperations  *float64
 	WriteOperations *float64
-	OpenFiles       *float64
 
 	Devices map[string]DeviceIOStats
 }
@@ -73,6 +72,7 @@ type ContainerPIDStats struct {
 	PIDs        []int
 	ThreadCount *float64
 	ThreadLimit *float64
+	OpenFiles   *float64
 }
 
 // InterfaceNetStats stores network statistics about a network interface
