@@ -473,6 +473,8 @@ type StatsProcessor interface {
 	// ProcessStats takes a stats payload and consumes it. It is considered to be originating
 	// from the given lang.
 	ProcessStats(p pb.ClientStatsPayload, lang, tracerVersion string)
+	// ProcessPipelineStats takes a pipeline stats payload and consumes it.
+	ProcessPipelineStats(p pb.ClientPipelineStatsPayload, lang, tracerVersion string)
 }
 
 // handleStats handles incoming stats payloads.
@@ -538,6 +540,26 @@ func (r *HTTPReceiver) handleConfig(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	w.Write(content)
+}
+
+// handlePipelineStats handles incoming pipeline stats payloads.
+func (r *HTTPReceiver) handlePipelineStats(w http.ResponseWriter, req *http.Request) {
+	defer timing.Since("datadog.trace_agent.receiver.pipeline_stats_process_ms", time.Now())
+
+	ts := r.tagStats(v01, req.Header)
+	rd := apiutil.NewLimitedReader(req.Body, r.conf.MaxRequestBytes)
+	req.Header.Set("Accept", "application/msgpack")
+	var in pb.ClientPipelineStatsPayload
+	if err := msgp.Decode(rd, &in); err != nil {
+		httpDecodingError(err, []string{"handler:pipeline_stats", "codec:msgpack", "v:v0.1"}, w)
+		return
+	}
+
+	metrics.Count("datadog.trace_agent.receiver.pipeline_stats_payload", 1, ts.AsTags(), 1)
+	metrics.Count("datadog.trace_agent.receiver.pipeline_stats_bytes", rd.Count, ts.AsTags(), 1)
+	metrics.Count("datadog.trace_agent.receiver.pipeline_stats_buckets", int64(len(in.Stats)), ts.AsTags(), 1)
+
+	r.statsProcessor.ProcessPipelineStats(in, req.Header.Get(headerLang), req.Header.Get(headerTracerVersion))
 }
 
 // handleTraces knows how to handle a bunch of traces

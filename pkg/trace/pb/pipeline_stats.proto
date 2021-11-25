@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+package pb;
+
+// protoc --gogofaster_out=. -I $GOPATH/src -I . pipeline_stats.proto
+
+// PipelineStatsPayload is the payload used to send stats from the agent to the backend.
+message PipelineStatsPayload {
+  string agentHostname = 1;
+  string agentEnv = 2;
+  string agentVersion = 3;
+  repeated ClientPipelineStatsPayload stats = 4 [(gogoproto.nullable) = false];
+}
+
+// ClientPipelineStatsPayload is the first layer of pipeline stats aggregation. It is also
+// the payload sent by tracers to the agent.
+message ClientPipelineStatsPayload {
+  string env = 1;
+  string version = 2;
+  repeated ClientPipelineStatsBucket stats = 3 [(gogoproto.nullable) = false];
+}
+
+// ClientPipelineStatsBucket is a time bucket containing aggregated pipeline stats.
+message ClientPipelineStatsBucket {
+  uint64 start = 1; // bucket start in nanoseconds
+  uint64 duration = 2; // bucket duration in nanoseconds
+  repeated ClientGroupedPipelineStats stats = 3 [(gogoproto.nullable) = false];
+}
+
+// ClientGroupedPipelineStats aggregate pipeline stats on spans grouped by
+message ClientGroupedPipelineStats {
+  string service = 1;
+  string receivingPipelineName = 2;
+  uint64 pipelineHash = 3;
+  uint64 parentHash = 4;
+  bytes sketch = 5; // ddsketch of pipeline latencies encoded in protobuf
+}

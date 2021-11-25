@@ -7,6 +7,7 @@ package agent
 
 import (
 	"context"
+	"github.com/davecgh/go-spew/spew"
 	"runtime"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,7 @@ type Agent struct {
 	OTLPReceiver          *api.OTLPReceiver
 	Concentrator          *stats.Concentrator
 	ClientStatsAggregator *stats.ClientStatsAggregator
+	PipelineStatsAggregator *stats.PipelineStatsAggregator
 	Blacklister           *filters.Blacklister
 	Replacer              *filters.Replacer
 	PrioritySampler       *sampler.PrioritySampler
@@ -49,6 +51,7 @@ type Agent struct {
 	EventProcessor        *event.Processor
 	TraceWriter           *writer.TraceWriter
 	StatsWriter           *writer.StatsWriter
+	PipelineStatsWriter           *writer.PipelineStatsWriter
 
 	// obfuscator is used to obfuscate sensitive data from various span
 	// tags based on their type.
@@ -70,10 +73,12 @@ func NewAgent(ctx context.Context, conf *config.AgentConfig) *Agent {
 	dynConf := sampler.NewDynamicConfig(conf.DefaultEnv)
 	in := make(chan *api.Payload, 1000)
 	statsChan := make(chan pb.StatsPayload, 100)
+	pipelineStatsChan := make(chan pb.PipelineStatsPayload, 100)
 
 	agnt := &Agent{
 		Concentrator:          stats.NewConcentrator(conf, statsChan, time.Now()),
 		ClientStatsAggregator: stats.NewClientStatsAggregator(conf, statsChan),
+		PipelineStatsAggregator: stats.NewPipelineStatsAggregator(conf, pipelineStatsChan),
 		Blacklister:           filters.NewBlacklister(conf.Ignore["resource"]),
 		Replacer:              filters.NewReplacer(conf.ReplaceTags),
 		PrioritySampler:       sampler.NewPrioritySampler(conf, dynConf),
@@ -83,6 +88,7 @@ func NewAgent(ctx context.Context, conf *config.AgentConfig) *Agent {
 		EventProcessor:        newEventProcessor(conf),
 		TraceWriter:           writer.NewTraceWriter(conf),
 		StatsWriter:           writer.NewStatsWriter(conf, statsChan),
+		PipelineStatsWriter:           writer.NewPipelineStatsWriter(conf, pipelineStatsChan),
 		obfuscator:            obfuscate.NewObfuscator(conf.Obfuscation),
 		In:                    in,
 		conf:                  conf,
@@ -99,6 +105,7 @@ func (a *Agent) Run() {
 		a.Receiver,
 		a.Concentrator,
 		a.ClientStatsAggregator,
+		a.PipelineStatsAggregator,
 		a.PrioritySampler,
 		a.ErrorsSampler,
 		a.NoPrioritySampler,
@@ -110,6 +117,7 @@ func (a *Agent) Run() {
 
 	go a.TraceWriter.Run()
 	go a.StatsWriter.Run()
+	go a.PipelineStatsWriter.Run()
 
 	for i := 0; i < runtime.NumCPU(); i++ {
 		go a.work()
@@ -160,8 +168,10 @@ func (a *Agent) loop() {
 			for _, stopper := range []interface{ Stop() }{
 				a.Concentrator,
 				a.ClientStatsAggregator,
+				a.PipelineStatsAggregator,
 				a.TraceWriter,
 				a.StatsWriter,
+				a.PipelineStatsWriter,
 				a.PrioritySampler,
 				a.ErrorsSampler,
 				a.NoPrioritySampler,
@@ -357,6 +367,11 @@ func (a *Agent) processStats(in pb.ClientStatsPayload, lang, tracerVersion strin
 	return in
 }
 
+func (a *Agent) processPipelineStats(in pb.ClientPipelineStatsPayload, lang, tracerVersion string) pb.ClientPipelineStatsPayload {
+	// todo: Add normalization
+	return in
+}
+
 func mergeDuplicates(s pb.ClientStatsBucket) {
 	indexes := make(map[stats.Aggregation]int, len(s.Stats))
 	for i, g := range s.Stats {
@@ -377,6 +392,13 @@ func mergeDuplicates(s pb.ClientStatsBucket) {
 // ProcessStats processes incoming client stats in from the given tracer.
 func (a *Agent) ProcessStats(in pb.ClientStatsPayload, lang, tracerVersion string) {
 	a.ClientStatsAggregator.In <- a.processStats(in, lang, tracerVersion)
+}
+
+// ProcessPipelineStats processes incoming client pipeline stats in from the given tracer.
+func (a *Agent) ProcessPipelineStats(in pb.ClientPipelineStatsPayload, lang, tracerVersion string) {
+	log.Info("received pipeline payload")
+	spew.Dump(in)
+	a.PipelineStatsAggregator.In <- a.processPipelineStats(in, lang, tracerVersion)
 }
 
 // sample reports the number of events found in pt and whether the chunk should be kept as a trace.

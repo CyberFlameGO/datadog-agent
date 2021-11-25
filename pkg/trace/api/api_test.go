@@ -579,6 +579,9 @@ func (m *mockStatsProcessor) ProcessStats(p pb.ClientStatsPayload, lang, tracerV
 	m.lastTracerVersion = tracerVersion
 }
 
+func (m *mockStatsProcessor) ProcessPipelineStats(p pb.ClientPipelineStatsPayload, lang, tracerVersion string) {
+}
+
 func (m *mockStatsProcessor) Got() (p pb.ClientStatsPayload, lang, tracerVersion string) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

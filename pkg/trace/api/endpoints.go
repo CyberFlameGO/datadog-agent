@@ -105,4 +105,8 @@ var endpoints = []endpoint{
 		Handler:   func(r *HTTPReceiver) http.Handler { return http.HandlerFunc(r.handleConfig) },
 		IsEnabled: func() bool { return features.Has("config_endpoint") },
 	},
+	{
+		Pattern: "/v0.1/pipeline_stats",
+		Handler: func(r *HTTPReceiver) http.Handler { return http.HandlerFunc(r.handlePipelineStats) },
+	},
 }

@@ -31,6 +31,18 @@ type StatsWriterInfo struct {
 	Bytes          int64
 }
 
+// PipelineStatsWriterInfo represents statistics from the pipeline stats writer.
+type PipelineStatsWriterInfo struct {
+	Payloads       int64
+	ClientPayloads int64
+	StatsBuckets   int64
+	StatsEntries   int64
+	Errors         int64
+	Retries        int64
+	Splits         int64
+	Bytes          int64
+}
+
 // UpdateTraceWriterInfo updates internal trace writer stats
 func UpdateTraceWriterInfo(tws TraceWriterInfo) {
 	infoMu.Lock()
