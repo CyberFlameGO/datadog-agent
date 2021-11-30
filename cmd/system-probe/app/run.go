@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/datadog-agent/cmd/system-probe/api"
 	"github.com/DataDog/datadog-agent/cmd/system-probe/api/module"
 	"github.com/DataDog/datadog-agent/cmd/system-probe/config"
+	"github.com/DataDog/datadog-agent/cmd/system-probe/modules"
 	ddconfig "github.com/DataDog/datadog-agent/pkg/config"
 	"github.com/DataDog/datadog-agent/pkg/pidfile"
 	"github.com/DataDog/datadog-agent/pkg/process/statsd"
@@ -35,6 +36,7 @@ var ErrNotEnabled = errors.New("system-probe not enabled")
 var (
 	// flags variables
 	pidfilePath string
+	moduleName  string
 
 	runCmd = &cobra.Command{
 		Use:   "run",
@@ -50,6 +52,31 @@ func init() {
 
 	// local flags
 	runCmd.Flags().StringVarP(&pidfilePath, "pid", "p", "", "path to the pidfile")
+	runCmd.Flags().StringVarP(&moduleName, "module", "m", "", "module to be started")
+}
+
+func startModules(cfg *config.Config) error {
+	for _, factory := range modules.All {
+		if !cfg.ModuleIsEnabled(factory.Name) {
+			log.Infof("%s module disabled", factory.Name)
+			continue
+		}
+
+		var attr = os.ProcAttr{
+			Env: os.Environ(),
+		}
+
+		exec, err := os.Executable()
+		if err != nil {
+			panic(err)
+		}
+
+		if _, err = os.StartProcess(exec, []string{exec, "-m", string(factory.Name)}, &attr); err != nil {
+			return fmt.Errorf("failed to start module %s: %s", factory.Name, err)
+		}
+	}
+
+	return nil
 }
 
 // Start the main loop
@@ -183,7 +210,11 @@ func StartSystemProbe() error {
 		}()
 	}
 
-	if err = api.StartServer(cfg); err != nil {
+	if moduleName == "" {
+		return startModules(cfg)
+	}
+
+	if err = api.StartServer(cfg, config.ModuleName(moduleName)); err != nil {
 		return log.Criticalf("Error while starting api server, exiting: %v", err)
 	}
 	return nil

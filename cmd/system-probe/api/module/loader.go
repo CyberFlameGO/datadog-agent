@@ -35,7 +35,7 @@ type loader struct {
 // Register a set of modules, which involves:
 // * Initialization using the provided Factory;
 // * Registering the HTTP endpoints of each module;
-func Register(cfg *config.Config, httpMux *mux.Router, factories []Factory) error {
+func Register(cfg *config.Config, httpMux *mux.Router, factories ...Factory) error {
 	router := NewRouter(httpMux)
 	for _, factory := range factories {
 		if !cfg.ModuleIsEnabled(factory.Name) {

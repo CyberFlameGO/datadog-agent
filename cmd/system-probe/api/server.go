@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"expvar"
 	"fmt"
 	"net/http"
@@ -14,15 +15,29 @@ import (
 	gorilla "github.com/gorilla/mux"
 )
 
+func factoryByName(name config.ModuleName) (module.Factory, error) {
+	for _, module := range modules.All {
+		if module.Name == name {
+			return module, nil
+		}
+	}
+	return module.Factory{}, errors.New("not found")
+}
+
 // StartServer starts the HTTP server for the system-probe, which registers endpoints from all enabled modules.
-func StartServer(cfg *config.Config) error {
+func StartServer(cfg *config.Config, moduleName config.ModuleName) error {
 	conn, err := net.NewListener(cfg.SocketAddress)
 	if err != nil {
 		return fmt.Errorf("error creating IPC socket: %s", err)
 	}
 
+	factory, err := factoryByName(moduleName)
+	if err != nil {
+		return fmt.Errorf("failed to start module %s: %s", moduleName, err)
+	}
+
 	mux := gorilla.NewRouter()
-	err = module.Register(cfg, mux, modules.All)
+	err = module.Register(cfg, mux, factory)
 	if err != nil {
 		return fmt.Errorf("failed to create system probe: %s", err)
 	}
