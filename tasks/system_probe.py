@@ -690,29 +690,6 @@ def generate_lookup_tables(ctx, windows=is_windows):
         ctx.run(f"go generate {file}")
 
 
-@task
-def check_lookup_tables(ctx, windows=is_windows):
-    if windows:
-        return
-
-    # Maps packages to the file containing the generated lookup table
-    # (that should have been generated as a result
-    # of running the `generate_lookup_tables` task)
-    lookup_tables = {
-        "pkg/network/go/goid": "./pkg/network/go/goid/goid_offset.go",
-    }
-    errors_found = []
-    for pkg, generated_file in lookup_tables.items():
-        res = ctx.run(f"git diff-files --exit-code {generated_file} {generated_file}", warn=True)
-        if res.exited is None or res.exited > 0:
-            errors_found.append(f"generated Go version lookup table for {pkg} package (at {generated_file}) is out of sync")
-
-    if errors_found:
-        message = "\nErrors found:\n" + "\n".join("  - " + error for error in errors_found)
-        message += "\n\nRun 'inv -e system-probe.generate-lookup-tables' to fix 'out of sync' errors."
-        raise Exit(message=message)
-
-
 def is_root():
     return os.getuid() == 0
 

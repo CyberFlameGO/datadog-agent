@@ -135,21 +135,3 @@ go_mod_tidy_check:
   artifacts:
     paths:
       - testmodule/
-
-# Check that generated Go version lookup tables are up-to-date
-# in system-probe
-go_lookup_tables_check:
-  stage: source_test
-  image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/datadog-agent-buildimages/deb_x64:$DATADOG_AGENT_BUILDIMAGES
-  tags: ["runner:main"]
-  needs: ["linux_x64_go_deps"]
-  before_script:
-    - !reference [.retrieve_linux_go_deps]
-  script:
-    - inv -e system-probe.generate-lookup-tables
-    - inv -e system-probe.check-lookup-tables
-  # This job can fail without failing the pipeline.
-  # This is because Go versions can be released at any time,
-  # so we don't want to break unrelated PRs.
-  # Instead, the CI is configured to send a Slack notification upon failure.
-  allow_failure: true
