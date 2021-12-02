@@ -85,14 +85,18 @@ int kretprobe__tcp_sendmsg(struct pt_regs* ctx) {
     return 0;
 }
 
-static __always_inline conn_tuple_t* tup_from_ssl_ctx(void *ssl_ctx, u64 pid_tgid) {
+static __always_inline ssl_sock_t * ssl_sock_from_ssl_ctx(void *ssl_ctx, u64 pid_tgid, u8 drop_on_http20) {
     ssl_sock_t *ssl_sock = bpf_map_lookup_elem(&ssl_sock_by_ctx, &ssl_ctx);
     if (ssl_sock == NULL) {
         return NULL;
     }
 
+    if (drop_on_http20 != 0 && ssl_sock->http20 != 0) {
+        return NULL;
+    }
+
     if (ssl_sock->tup.sport != 0 && ssl_sock->tup.dport != 0) {
-        return &ssl_sock->tup;
+        return ssl_sock;
     }
 
     // the code path below should be executed only once during the lifecycle of a SSL session
@@ -126,12 +130,13 @@ static __always_inline conn_tuple_t* tup_from_ssl_ctx(void *ssl_ctx, u64 pid_tgi
         flip_tuple(&ssl_sock->tup);
     }
 
-    return &ssl_sock->tup;
+    return ssl_sock;
 }
 
 static __always_inline void init_ssl_sock(void *ssl_ctx, u32 socket_fd) {
     ssl_sock_t ssl_sock = { 0 };
     ssl_sock.fd = socket_fd;
+    ssl_sock.http20 = 0;
     bpf_map_update_elem(&ssl_sock_by_ctx, &ssl_ctx, &ssl_sock, BPF_ANY);
 }
 
@@ -203,20 +208,27 @@ int uretprobe__SSL_read(struct pt_regs* ctx) {
     }
 
     void *ssl_ctx = args->ctx;
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_ctx, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_ctx, pid_tgid, 1);
+    if (ssl_sock == NULL) {
         goto cleanup;
     }
 
-    u32 len = (u32)PT_REGS_RC(ctx);
+    size_t len = (size_t)PT_REGS_RC(ctx);
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
-    if (len >= HTTP_BUFFER_SIZE) {
-        bpf_probe_read(buffer, sizeof(buffer), args->buf);
+    if (len > HTTP_BUFFER_SIZE) {
+        len = HTTP_BUFFER_SIZE;
+    }
+    bpf_probe_read(buffer, len, args->buf);
+
+    if (len == HTTP20_PRI_LEN && is_http20(buffer) > 0) {
+        ssl_sock->http20 = 1;
+        log_debug("SSL_read HTTP/2.0\n");
+        return 0;
     }
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBSSL);
  cleanup:
     bpf_map_delete_elem(&ssl_read_args, &pid_tgid);
@@ -227,8 +239,8 @@ SEC("uprobe/SSL_write")
 int uprobe__SSL_write(struct pt_regs* ctx) {
     void *ssl_ctx = (void *)PT_REGS_PARM1(ctx);
     u64 pid_tgid = bpf_get_current_pid_tgid();
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_ctx, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_ctx, pid_tgid, 1);
+    if (ssl_sock == NULL) {
         return 0;
     }
 
@@ -236,12 +248,19 @@ int uprobe__SSL_write(struct pt_regs* ctx) {
     size_t len = (size_t)PT_REGS_PARM3(ctx);
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
-    if (len >= HTTP_BUFFER_SIZE) {
-        bpf_probe_read(buffer, sizeof(buffer), ssl_buffer);
+    if (len > HTTP_BUFFER_SIZE) {
+        len = HTTP_BUFFER_SIZE;
+    }
+    bpf_probe_read(buffer, len, ssl_buffer);
+
+    if (len == HTTP20_PRI_LEN && is_http20(buffer) > 0) {
+        ssl_sock->http20 = 1;
+        log_debug("SSL_write HTTP/2.0\n");
+        return 0;
     }
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBSSL);
     return 0;
 }
@@ -250,20 +269,24 @@ SEC("uprobe/SSL_shutdown")
 int uprobe__SSL_shutdown(struct pt_regs* ctx) {
     void *ssl_ctx = (void *)PT_REGS_PARM1(ctx);
     u64 pid_tgid = bpf_get_current_pid_tgid();
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_ctx, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_ctx, pid_tgid, 0);
+    if (ssl_sock == NULL) {
         return 0;
+    }
+    if (ssl_sock->http20 != 0) {
+        goto cleanup;
     }
 
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
 
     // TODO: this is just a hack. Let's get rid of this skb_info argument altogether
     skb_info.tcp_flags |= TCPHDR_FIN;
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBSSL);
+cleanup:
     bpf_map_delete_elem(&ssl_sock_by_ctx, &ssl_ctx);
     return 0;
 }
@@ -329,7 +352,7 @@ int uprobe__gnutls_record_recv(struct pt_regs* ctx) {
 // ssize_t gnutls_record_recv (gnutls_session_t session, void * data, size_t data_size)
 SEC("uretprobe/gnutls_record_recv")
 int uretprobe__gnutls_record_recv(struct pt_regs* ctx) {
-    ssize_t read_len = (ssize_t)PT_REGS_RC(ctx);
+    size_t read_len = (size_t)PT_REGS_RC(ctx);
 
     u64 pid_tgid = bpf_get_current_pid_tgid();
     // Re-use the map for SSL_read
@@ -339,21 +362,26 @@ int uretprobe__gnutls_record_recv(struct pt_regs* ctx) {
     }
 
     void *ssl_session = args->ctx;
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_session, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_session, pid_tgid, 1);
+    if (ssl_sock == NULL) {
         goto cleanup;
     }
 
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
-    if (read_len < sizeof(buffer)) {
-        bpf_probe_read(buffer, read_len, args->buf);
-    } else {
-        bpf_probe_read(buffer, sizeof(buffer), args->buf);
+    if (read_len > HTTP_BUFFER_SIZE) {
+        read_len = HTTP_BUFFER_SIZE;
+    }
+    bpf_probe_read(buffer, read_len, args->buf);
+
+    if (read_len == HTTP20_PRI_LEN && is_http20(buffer) > 0) {
+        ssl_sock->http20 = 1;
+        log_debug("gnutls_record_recv HTTP/2.0\n");
+        return 0;
     }
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBGNUTLS);
  cleanup:
     bpf_map_delete_elem(&ssl_read_args, &pid_tgid);
@@ -368,21 +396,26 @@ int uprobe__gnutls_record_send(struct pt_regs* ctx) {
     size_t data_size = (size_t)PT_REGS_PARM3(ctx);
 
     u64 pid_tgid = bpf_get_current_pid_tgid();
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_session, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_session, pid_tgid, 1);
+    if (ssl_sock == NULL) {
         return 0;
     }
 
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
-    if (data_size < sizeof(buffer)) {
-        bpf_probe_read(buffer, data_size, data);
-    } else {
-        bpf_probe_read(buffer, sizeof(buffer), data);
+    if (data_size > HTTP_BUFFER_SIZE) {
+        data_size = HTTP_BUFFER_SIZE;
+    }
+    bpf_probe_read(buffer, data_size, data);
+
+    if (data_size == HTTP20_PRI_LEN && is_http20(buffer) > 0) {
+        ssl_sock->http20 = 1;
+        log_debug("gnutls_record_send HTTP/2.0\n");
+        return 0;
     }
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBGNUTLS);
     return 0;
 }
@@ -393,20 +426,24 @@ int uprobe__gnutls_bye(struct pt_regs* ctx) {
     void *ssl_session = (void *)PT_REGS_PARM1(ctx);
 
     u64 pid_tgid = bpf_get_current_pid_tgid();
-    conn_tuple_t *t = tup_from_ssl_ctx(ssl_session, pid_tgid);
-    if (t == NULL) {
+    ssl_sock_t *ssl_sock = ssl_sock_from_ssl_ctx(ssl_session, pid_tgid, 0);
+    if (ssl_sock == NULL) {
         return 0;
+    }
+    if (ssl_sock->http20 != 0) {
+        goto cleanup;
     }
 
     char buffer[HTTP_BUFFER_SIZE];
     __builtin_memset(buffer, 0, sizeof(buffer));
 
     skb_info_t skb_info = {0};
-    __builtin_memcpy(&skb_info.tup, t, sizeof(conn_tuple_t));
+    __builtin_memcpy(&skb_info.tup, &ssl_sock->tup, sizeof(conn_tuple_t));
 
     // TODO: this is just a hack. Let's get rid of this skb_info argument altogether
     skb_info.tcp_flags |= TCPHDR_FIN;
     http_process(buffer, &skb_info, skb_info.tup.sport, LIBGNUTLS);
+cleanup:
     bpf_map_delete_elem(&ssl_sock_by_ctx, &ssl_session);
     return 0;
 }
