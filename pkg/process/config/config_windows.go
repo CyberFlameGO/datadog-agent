@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package config
@@ -16,8 +17,6 @@ const (
 )
 
 var (
-	defaultLogFilePath = "c:\\programdata\\datadog\\logs\\process-agent.log"
-
 	// Agent 6
 	defaultDDAgentBin = "c:\\Program Files\\Datadog\\Datadog Agent\\bin\\agent.exe"
 )

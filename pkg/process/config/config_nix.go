@@ -1,11 +1,9 @@
-// +build !windows
-// +build !darwin
+//go:build !windows && !darwin
+// +build !windows,!darwin
 
 package config
 
 const (
-	defaultLogFilePath = "/var/log/datadog/process-agent.log"
-
 	// Agent 6
 	defaultDDAgentBin = "/opt/datadog-agent/bin/agent/agent"
 
