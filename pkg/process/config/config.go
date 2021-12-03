@@ -424,12 +424,9 @@ func loadEnvVariables() {
 		{"DD_BIND_HOST", "bind_host"},
 		{"HTTPS_PROXY", "proxy.https"},
 		{"DD_PROXY_HTTPS", "proxy.https"},
-
 		{"DD_LOGS_STDOUT", "log_to_console"},
 		{"LOG_TO_CONSOLE", "log_to_console"},
 		{"DD_LOG_TO_CONSOLE", "log_to_console"},
-		{"LOG_LEVEL", "log_level"}, // Support LOG_LEVEL and DD_LOG_LEVEL but prefer DD_LOG_LEVEL
-		{"DD_LOG_LEVEL", "log_level"},
 	} {
 		if v, ok := os.LookupEnv(variable.env); ok {
 			config.Datadog.Set(variable.cfg, v)
