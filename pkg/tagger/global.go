@@ -244,7 +244,7 @@ func ResetCaptureTagger() {
 }
 
 func init() {
-	SetDefaultTagger(local.NewTagger(collectors.DefaultCatalog))
+	SetDefaultTagger(local.NewTagger(nil))
 }
 
 // EnrichTags extends a tag list with origin detection tags
