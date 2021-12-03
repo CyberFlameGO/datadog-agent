@@ -8,6 +8,7 @@
 package containerd
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -82,7 +83,7 @@ func (c *ContainerdCheck) Configure(config, initConfig integration.Data, source 
 	if err = c.instance.Parse(config); err != nil {
 		return err
 	}
-	c.sub.Filters = c.instance.ContainerdFilters
+	c.sub.Filters = c.subscribeFilters()
 	// GetSharedMetricFilter should not return a nil instance of *Filter if there is an error during its setup.
 	fil, err := ddContainers.GetSharedMetricFilter()
 	if err != nil {
@@ -109,11 +110,10 @@ func (c *ContainerdCheck) Run() error {
 		return errHealth
 	}
 	sender.ServiceCheck("containerd.health", metrics.ServiceCheckOK, "", nil, "")
-	ns := cu.Namespace()
 
 	if c.instance.CollectEvents {
 		if c.sub == nil {
-			c.sub = CreateEventSubscriber("ContainerdCheck", ns, c.instance.ContainerdFilters)
+			c.sub = CreateEventSubscriber("ContainerdCheck", c.subscribeFilters())
 		}
 
 		if !c.sub.IsRunning() {
@@ -125,7 +125,16 @@ func (c *ContainerdCheck) Run() error {
 		computeEvents(events, sender, c.filters)
 	}
 
-	computeMetrics(sender, cu, c.filters)
+	namespaces, err := cutil.NamespacesToWatch(context.TODO(), cu)
+	if err != nil {
+		return err
+	}
+
+	for _, namespace := range namespaces {
+		cu.SetCurrentNamespace(namespace)
+		computeMetrics(sender, cu, c.filters)
+	}
+
 	return nil
 }
 
@@ -448,4 +457,23 @@ func computeStorageWindows(sender aggregator.Sender, storageStats *wstats.Window
 
 	sender.Rate("containerd.storage.read", float64(storageStats.ReadSizeBytes), "", tags)
 	sender.Rate("containerd.storage.write", float64(storageStats.WriteSizeBytes), "", tags)
+}
+
+// subscribeFilters returns the filters that we need to send to the containerd
+// events subscriber. This returns the user-provided filters present in the
+// config modified, if needed, to filter by namespace as well.
+func (c *ContainerdCheck) subscribeFilters() []string {
+	namespace := config.Datadog.GetString("containerd_namespace")
+
+	if namespace == "" {
+		// We don't need to filter by namespace
+		return c.instance.ContainerdFilters
+	}
+
+	var filters []string
+	for _, filter := range c.instance.ContainerdFilters {
+		filters = append(filters, fmt.Sprintf(`%s,namespace==%q`, filter, namespace))
+	}
+
+	return filters
 }
