@@ -53,7 +53,9 @@ type ContainerdItf interface {
 	Spec(ctn containerd.Container) (*oci.Spec, error)
 	SpecWithContext(ctx context.Context, ctn containerd.Container) (*oci.Spec, error)
 	Metadata() (containerd.Version, error)
-	Namespace() string
+	CurrentNamespace() string
+	SetCurrentNamespace(namespace string)
+	Namespaces(ctx context.Context) ([]string, error)
 	TaskMetrics(ctn containerd.Container) (*types.Metric, error)
 	TaskPids(ctn containerd.Container) ([]containerd.ProcessInfo, error)
 	Status(ctn containerd.Container) (containerd.ProcessStatus, error)
@@ -99,8 +101,16 @@ func GetContainerdUtil() (ContainerdItf, error) {
 	return globalContainerdUtil, nil
 }
 
-func (c *ContainerdUtil) Namespace() string {
+func (c *ContainerdUtil) CurrentNamespace() string {
 	return c.namespace
+}
+
+func (c *ContainerdUtil) SetCurrentNamespace(namespace string) {
+	c.namespace = namespace
+}
+
+func (c *ContainerdUtil) Namespaces(ctx context.Context) ([]string, error) {
+	return c.cl.NamespaceService().List(ctx)
 }
 
 // Metadata is used to collect the version and revision of the Containerd API
