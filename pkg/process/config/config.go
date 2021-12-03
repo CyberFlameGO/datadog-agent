@@ -95,7 +95,6 @@ type AgentConfig struct {
 	Enabled                   bool
 	HostName                  string
 	APIEndpoints              []apicfg.Endpoint
-	LogLevel                  string
 	LogToConsole              bool
 	QueueSize                 int // The number of items allowed in each delivery queue.
 	RTQueueSize               int // the number of items allowed in real-time delivery queue
@@ -191,7 +190,6 @@ func NewDefaultAgentConfig(canAccessContainers bool) *AgentConfig {
 	ac := &AgentConfig{
 		Enabled:      canAccessContainers, // We'll always run inside of a container.
 		APIEndpoints: []apicfg.Endpoint{{Endpoint: processEndpoint}},
-		LogLevel:     "info",
 		LogToConsole: false,
 
 		// Allow buffering up to 60 megabytes of payload data in total
@@ -340,11 +338,6 @@ func NewAgentConfig(loggerName config.LoggerName, yamlPath, netYamlPath string) 
 	if cfg.proxy, err = proxyFromEnv(cfg.proxy); err != nil {
 		log.Errorf("error parsing environment proxy settings, not using a proxy: %s", err)
 		cfg.proxy = nil
-	}
-
-	// Python-style log level has WARNING vs WARN
-	if strings.ToLower(cfg.LogLevel) == "warning" {
-		cfg.LogLevel = "warn"
 	}
 
 	if err := validate.ValidHostname(cfg.HostName); err != nil {
@@ -639,7 +632,7 @@ func constructProxy(host, scheme string, port int, user, password string) (proxy
 func setupLogger(loggerName config.LoggerName, logFile string, cfg *AgentConfig) error {
 	return config.SetupLogger(
 		loggerName,
-		cfg.LogLevel,
+		config.Datadog.GetString("log_level"),
 		logFile,
 		config.GetSyslogURI(),
 		config.Datadog.GetBool("syslog_rfc"),
