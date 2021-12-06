@@ -76,4 +76,12 @@ const (
 	// Response: Service sampling rates.
 	//
 	v06 Version = "v0.6"
+
+	// v08
+	//
+	// Content-Type: application/msgpack
+	// Payload: TracerPayload (pkg/trace/pb/tracer_payload.proto) updated on 2021/12/06
+	// Response: Service sampling rates.
+	//
+	v08 Version = "v0.8"
 )
