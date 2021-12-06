@@ -14,7 +14,7 @@
         "WINDOWS_DDNPM_DRIVER": "release-signed",
         "WINDOWS_DDNPM_VERSION": "1.2.1",
         "WINDOWS_DDNPM_SHASUM": "f91a8875652941ba0f5b174ed77e434d2c7b8ba83f6c2499207cf8a05eb376f5",
-        "SECURITY_AGENT_POLICIES_VERSION": "master"
+        "SECURITY_AGENT_POLICIES_VERSION": "paulcacheux/fix-missing-processes"
     },
     "nightly-a7": {
         "INTEGRATIONS_CORE_VERSION": "master",
@@ -26,7 +26,7 @@
         "WINDOWS_DDNPM_DRIVER": "release-signed",
         "WINDOWS_DDNPM_VERSION": "1.2.1",
         "WINDOWS_DDNPM_SHASUM": "f91a8875652941ba0f5b174ed77e434d2c7b8ba83f6c2499207cf8a05eb376f5",
-        "SECURITY_AGENT_POLICIES_VERSION": "master"
+        "SECURITY_AGENT_POLICIES_VERSION": "paulcacheux/fix-missing-processes"
     },
     "release-a6": {
         "INTEGRATIONS_CORE_VERSION": "7.33.0-rc.4",
